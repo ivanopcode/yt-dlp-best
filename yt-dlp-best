@@ -1,47 +1,72 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -euo pipefail          # stop on error, unset var, failed pipes
 
-# ─── Dependencies ───────────────────────────
+# ─── Dependencies ────────────────────────────────────────────────────────────
 for cmd in ffmpeg yt-dlp; do
-  command -v "$cmd" >/dev/null || {
-    echo "Error: $cmd is not installed." >&2
-    exit 1
-  }
+	command -v "$cmd" >/dev/null || {
+		echo "Error: $cmd is not installed." >&2
+		exit 1
+	}
 done
 
-# ─── Input ───────────────────────────────────
+# ─── Helper functions ────────────────────────────────────────────────────────
+sanitize() { tr '/\\:*?"<>|' '-' <<<"$1"; }
+
+process_url() {
+	local media_url=$1          # keep the function pure ↴
+	printf '[metadata] Extracting video metadata for %s …\n' "$media_url"
+
+	# ── Metadata ────────────────────────────────────────────────────────────
+	local upload_date channel_name video_title video_id platform
+	upload_date=$(yt-dlp --print "%(upload_date>%Y-%m-%d)s" --quiet "$media_url")
+	channel_name=$(yt-dlp --print channel       --quiet "$media_url")
+	video_title=$(yt-dlp  --print title         --quiet "$media_url")
+	video_id=$(yt-dlp     --print id            --quiet "$media_url")
+	platform=$(yt-dlp     --print extractor_key --quiet "$media_url" | tr '[:upper:]' '[:lower:]')
+
+	# ── Folder naming ───────────────────────────────────────────────────────
+	local base folder
+	base="[$upload_date] [$(sanitize "$channel_name")] [$platform] [$video_id] [$(sanitize "$video_title")]"
+	folder=$base
+	mkdir -p "$folder"
+
+	echo "Downloading \"$video_title\" from \"$channel_name\" ($upload_date, $platform)"
+	echo "Folder: $folder/"
+
+	# ── Video + audio ───────────────────────────────────────────────────────
+	yt-dlp \
+	-f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio" \
+	--merge-output-format mp4 \
+	-o "$folder/$base.%(ext)s" \
+	"$media_url"
+
+	# ── Images (storyboard + every thumbnail) ────────────────────────────────
+	yt-dlp \
+	--skip-download \
+	--write-thumbnail \
+	--convert-thumbnails jpg \
+	--output "$folder/$base.%(format_id)s.%(ext)s" \
+	-- \
+	"$media_url"
+
+	echo "[Success] \"$video_title\" done."
+}
+
+# ─── Entry point ─────────────────────────────────────────────────────────────
 if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 <media_url>" >&2
-  exit 1
+	echo "Usage: $0 <media_url | file_with_urls>" >&2
+	exit 1
 fi
-media_url=$1
 
-echo "[metadata] Extracting video metadata…"
+input=$1
 
-# ─── Metadata ────────────────────────────────
-upload_date=$(yt-dlp --print "%(upload_date>%Y-%m-%d)s" --quiet "$media_url")
-channel_name=$(yt-dlp --print channel --quiet "$media_url")
-video_title=$(yt-dlp  --print title   --quiet "$media_url")
-video_id=$(yt-dlp     --print id      --quiet "$media_url")
-platform=$(yt-dlp     --print extractor_key --quiet "$media_url" | tr '[:upper:]' '[:lower:]')
-
-sanitize(){ tr '/\\:*?"<>|' '-' <<<"$1"; }
-
-safe_channel_name=$(sanitize "$channel_name")
-safe_video_title=$(sanitize "$video_title")
-
-base="[$upload_date] [$safe_channel_name] [$platform] [$video_id] [$safe_video_title]"
-folder="$base"
-mkdir -p "$folder"
-
-echo "Downloading \"$video_title\" from \"$channel_name\" uploaded on $upload_date via $platform."
-echo "Files will be stored in: $folder/"
-
-# ─── Download & merge ───────────────────────
-yt-dlp \
-  -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio" \
-  --merge-output-format mp4 \
-  -o "${folder}/${base}.%(ext)s" \
-  "$media_url"
-
-echo "[Success] \"$video_title\" downloaded and merged"
+if [[ -f "$input" ]]; then                         # batch mode
+	while IFS= read -r line || [[ -n $line ]]; do
+		line="${line%%#*}"                             # strip # comments
+		line="${line%"${line##*[![:space:]]}"}"        # trim trailing spaces
+		[[ -z $line ]] && continue                     # skip blanks
+		process_url "$line"
+	done < "$input"
+else                                               # single URL mode
+	process_url "$input"
+fi
