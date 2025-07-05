@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ─── Dependencies ───────────────────────────
+for cmd in ffmpeg yt-dlp; do
+  command -v "$cmd" >/dev/null || {
+    echo "Error: $cmd is not installed." >&2
+    exit 1
+  }
+done
+
+# ─── Input ───────────────────────────────────
+if [[ $# -ne 1 ]]; then
+  echo "Usage: $0 <media_url>" >&2
+  exit 1
+fi
+media_url=$1
+
+echo "[metadata] Extracting video metadata…"
+
+# ─── Metadata ────────────────────────────────
+upload_date=$(yt-dlp --print "%(upload_date>%Y-%m-%d)s" --quiet "$media_url")
+channel_name=$(yt-dlp --print channel --quiet "$media_url")
+video_title=$(yt-dlp  --print title   --quiet "$media_url")
+video_id=$(yt-dlp     --print id      --quiet "$media_url")
+platform=$(yt-dlp     --print extractor_key --quiet "$media_url" | tr '[:upper:]' '[:lower:]')
+
+sanitize(){ tr '/\\:*?"<>|' '-' <<<"$1"; }
+
+safe_channel_name=$(sanitize "$channel_name")
+safe_video_title=$(sanitize "$video_title")
+
+base="[$upload_date] [$safe_channel_name] [$platform] [$video_id] [$safe_video_title]"
+folder="$base"
+mkdir -p "$folder"
+
+echo "Downloading \"$video_title\" from \"$channel_name\" uploaded on $upload_date via $platform."
+echo "Files will be stored in: $folder/"
+
+# ─── Download & merge ───────────────────────
+yt-dlp \
+  -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio" \
+  --merge-output-format mp4 \
+  -o "${folder}/${base}.%(ext)s" \
+  "$media_url"
+
+echo "[Success] \"$video_title\" downloaded and merged"
