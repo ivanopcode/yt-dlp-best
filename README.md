@@ -1,24 +1,28 @@
-yt-dlp-best
+# yt-dlp-best
 
-A simple shell script that downloads the best available MP4 video and M4A audio from a provided URL, merges them into an MP4 container, and retains only the audio sidecar in a structured folder.
+A minimal Bash wrapper around **yt-dlp** + **FFmpeg** that
 
-Dependencies
-	•	yt-dlp
-	•	ffmpeg
+* grabs the **best available** MP4 video track and M4A audio track  
+* merges them into a single `.mp4` (no re-encode)  
+* downloads the highest-resolution thumbnail / storyboard sheet (if present)  
+* puts everything into a deterministic, human-readable folder
 
-Make sure both are installed and available in your $PATH.
+---
 
-Usage
+## Dependencies
 
-./yt-dlp-best "<media_url>"
+* **[yt-dlp](https://github.com/yt-dlp/yt-dlp)**
+* **FFmpeg** (any modern build)  
 
-Example:
+Ensure both binaries are discoverable in your `$PATH`.
 
-./yt-dlp-best "https://youtu.be/example-video"
+---
 
-Output Structure
+## Installation
 
-Downloads are organized into individual folders named using the video’s metadata:
+```bash
+git clone https://github.com/your-org/yt-dlp-best.git
+cd yt-dlp-best
+chmod +x yt-dlp-best
+```
 
-[upload_date] [channel_name] [platform] [video_id] [video_title]/
-├── [upload_date] [channel_name] [platform] [video_id] [video_title].mp4  # merged video
